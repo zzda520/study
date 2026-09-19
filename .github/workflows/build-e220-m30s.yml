@@ -30,41 +30,18 @@ jobs:
           p = Path("variants/nrf52840/diy/nrf52_promicro_diy_tcxo/variant.h")
           s = p.read_text()
 
-          # Force the radio probe to use LLCC68 only. Keep the official ProMicro pinout:
-          # MISO P0.02, MOSI P1.15, SCK P1.11, CS P1.13,
-          # DIO1 P0.10, BUSY P0.29, RESET P0.09, RXEN P0.17,
-          # with E220 DIO2 externally wired to TXEN.
-          s = s.replace(
-          """#define USE_LLCC68
-#define USE_SX1262
-#define USE_RF95
-#define USE_SX1268
-#define USE_LR1121
-#define USE_LR2021""",
-          """#define USE_LLCC68
-// E220-400M30S custom build: force LLCC68 only
-// #define USE_SX1262
-// #define USE_RF95
-// #define USE_SX1268
-// #define USE_LR1121
-// #define USE_LR2021""")
+          old = "#define USE_LLCC68\n#define USE_SX1262\n#define USE_RF95\n#define USE_SX1268\n#define USE_LR1121\n#define USE_LR2021"
+          new = "#define USE_LLCC68\n// E220-400M30S custom build: force LLCC68 only\n// #define USE_SX1262\n// #define USE_RF95\n// #define USE_SX1268\n// #define USE_LR1121\n// #define USE_LR2021"
+          if old not in s:
+              raise SystemExit("Could not find radio-family block")
+          s = s.replace(old, new, 1)
 
           marker = "#define SX126X_TXEN RADIOLIB_NC  // Assuming that DIO2 is connected to TXEN pin. If not, TXEN must be connected.\n"
-          inject = marker + """
-// E220-400M30S (LLCC68 + external PA/LNA)
-// LLCC68 nominal max is 22 dBm; module output is rated 30 dBm, so model PA gain as 8 dB.
-// Regional limits are still enforced by Meshtastic before this conversion.
-#define SX126X_MAX_POWER 22
-#undef TX_GAIN_LORA
-#define TX_GAIN_LORA 8
-"""
+          inject = marker + "\n// E220-400M30S (LLCC68 + external PA/LNA)\n// Model module PA gain as 8 dB: 22 dBm radio drive -> approx. 30 dBm module output.\n// Meshtastic regional output-power limits are applied before this conversion.\n#define SX126X_MAX_POWER 22\n#undef TX_GAIN_LORA\n#define TX_GAIN_LORA 8\n"
           if marker not in s:
               raise SystemExit("Could not find SX126X_TXEN marker")
           s = s.replace(marker, inject, 1)
 
-          # Keep the official ProMicro DIY TCXO probing behavior. E220-400M30S manual states
-          # DIO3 powers the internal 32 MHz TCXO, but does not publish the exact Vref.
-          # The stock variant probes 1.8 V and can fall back via TCXO_OPTIONAL.
           p.write_text(s)
           PY
 
@@ -86,29 +63,29 @@ jobs:
           mkdir -p custom-release
           cp -av release/* custom-release/ 2>/dev/null || true
           find .pio/build/nrf52_promicro_diy_tcxo -maxdepth 1 -type f \( -name '*.uf2' -o -name '*.hex' -o -name '*.bin' -o -name '*.elf' \) -exec cp -av {} custom-release/ \; || true
-          cat > custom-release/README-E220-400M30S.txt <<'EOF'
-          Target: NoLogo ProMicro nRF52840 + Ebyte E220-400M30S (LLCC68)
-          Upstream: meshtastic/firmware develop commit 2a398fb2fdff166a91769fa95e3aa773a007f521
-          Radio driver: LLCC68 only
-          Pinout:
-            MISO P0.02
-            MOSI P1.15
-            SCK P1.11
-            NSS/CS P1.13
-            DIO1 P0.10
-            BUSY P0.29
-            NRST P0.09
-            RXEN P0.17
-            DIO2 must be externally connected to E220 TXEN
-          PA model:
-            SX126X_MAX_POWER 22
-            TX_GAIN_LORA 8
-          TCXO:
-            Stock ProMicro DIY probing behavior retained (1.8V + TCXO_OPTIONAL)
-          IMPORTANT:
-            LLCC68 does NOT support BW250/SF11 (standard LongFast).
-            Use a supported preset such as MEDIUM_SLOW (BW250/SF10) or LONG_TURBO (BW500/SF11).
-          EOF
+          {
+            echo "Target: NoLogo ProMicro nRF52840 + Ebyte E220-400M30S (LLCC68)"
+            echo "Upstream: meshtastic/firmware develop commit 2a398fb2fdff166a91769fa95e3aa773a007f521"
+            echo "Radio driver: LLCC68 only"
+            echo "Pinout:"
+            echo "  MISO P0.02"
+            echo "  MOSI P1.15"
+            echo "  SCK P1.11"
+            echo "  NSS/CS P1.13"
+            echo "  DIO1 P0.10"
+            echo "  BUSY P0.29"
+            echo "  NRST P0.09"
+            echo "  RXEN P0.17"
+            echo "  DIO2 must be externally connected to E220 TXEN"
+            echo "PA model:"
+            echo "  SX126X_MAX_POWER 22"
+            echo "  TX_GAIN_LORA 8"
+            echo "TCXO:"
+            echo "  Stock ProMicro DIY probing behavior retained (1.8V + TCXO_OPTIONAL)"
+            echo "IMPORTANT:"
+            echo "  LLCC68 does NOT support BW250/SF11 (standard LongFast)."
+            echo "  Start with MEDIUM_SLOW (BW250/SF10) or LONG_TURBO (BW500/SF11)."
+          } > custom-release/README-E220-400M30S.txt
           ls -lah custom-release
 
       - name: Upload firmware artifact
